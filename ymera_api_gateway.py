@@ -19,7 +19,7 @@ from typing import Dict, List, Any, Optional, Union
 from dataclasses import dataclass, field
 
 # Third-party imports (alphabetical)
-import aioredis
+import redis.asyncio as aioredis
 import structlog
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, status
 from fastapi.responses import JSONResponse

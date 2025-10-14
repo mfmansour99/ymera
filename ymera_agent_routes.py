@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 # Third-party imports (alphabetical)
-import aioredis
+import redis.asyncio as aioredis
 import structlog
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
 from fastapi.responses import StreamingResponse
