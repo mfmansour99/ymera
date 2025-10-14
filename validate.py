@@ -122,7 +122,7 @@ def validate_main_files() -> Tuple[int, int]:
             passed += 1
         else:
             print_warning(f"Optional file missing: {filepath}")
-    
+            failed += 1
     return passed, failed
 
 def check_python_syntax() -> Tuple[int, int]:
