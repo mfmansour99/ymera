@@ -26,7 +26,7 @@ except ImportError:
         from types import SimpleNamespace
         return SimpleNamespace(
             ENVIRONMENT="production",
-            CORS_ORIGINS=["*"],
+            CORS_ORIGINS=["https://yourdomain.com"],  # TODO: Replace with actual trusted domains
             DEBUG=False,
             LOG_LEVEL="INFO"
         )
