@@ -1,11 +1,11 @@
-"""YMERA Enterprise - API Gateway Core Routes Module v4.0"""
+"""YMERA Enterprise - Core Engine Module v4.0"""
 
 try:
-    from .ymera_api_gateway import create_api_router
-    __all__ = ["create_api_router"]
+    from .core_engine import CoreEngine, LearningEngine
+    __all__ = ["CoreEngine", "LearningEngine"]
 except ImportError as e:
     import logging
-    logging.error(f"Failed to import API Gateway components: {e}")
+    logging.error(f"Failed to import Core Engine components: {e}")
     __all__ = []
 
 __version__ = "4.0.0"
