@@ -1,11 +1,33 @@
-"""YMERA Enterprise - Core Engine Module v4.0"""
+"""YMERA Enterprise - Pattern Recognition Engine Module v4.0"""
+
+import logging
+logger = logging.getLogger("ymera.pattern_recognition")
 
 try:
-    from .core_engine import CoreEngine, LearningEngine
-    __all__ = ["CoreEngine", "LearningEngine"]
+    from .pattern_recognition import (
+        PatternRecognitionEngine,
+        PatternRecognitionConfig,
+        DiscoveredPattern,
+        PatternInstance,
+        PatternAnalysisRequest,
+        PatternSearchResult,
+        BasePatternAnalyzer,
+        TemporalPatternAnalyzer,
+    )
+    _IMPORT_SUCCESS = True
 except ImportError as e:
-    import logging
-    logging.error(f"Failed to import Core Engine components: {e}")
-    __all__ = []
+    _IMPORT_SUCCESS = False
+    logger.error(f"Failed to initialize Pattern Recognition module: {e}")
+
+__all__ = [
+    "PatternRecognitionEngine",
+    "PatternRecognitionConfig",
+    "DiscoveredPattern",
+    "PatternInstance",
+    "PatternAnalysisRequest",
+    "PatternSearchResult",
+    "BasePatternAnalyzer",
+    "TemporalPatternAnalyzer",
+]
 
 __version__ = "4.0.0"

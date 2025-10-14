@@ -1,377 +1,439 @@
 """
-YMERA Enterprise - Settings Configuration
-Production-Ready Environment-Based Settings - v4.0
-Enterprise-grade implementation with zero placeholders
+Configuration Settings Compatibility Module
+Provides backward compatibility for various config patterns
 """
 
-# ===============================================================================
-# STANDARD IMPORTS SECTION
-# ===============================================================================
-
-# Standard library imports (alphabetical)
 import os
-import secrets
-from functools import lru_cache
-from typing import Dict, List, Any, Optional, Union
+from typing import Optional, Dict, Any
+from dataclasses import dataclass, field
 from pathlib import Path
 
-# Third-party imports (alphabetical)
-from pydantic import Field, field_validator
-from pydantic.v1 import root_validator, validator
-from pydantic_settings import BaseSettings
-import structlog
+# ============================================================================
+# ENVIRONMENT VARIABLE HELPERS
+# ============================================================================
 
-# ===============================================================================
-# LOGGING CONFIGURATION
-# ===============================================================================
+def get_env(key: str, default: Any = None, required: bool = False) -> Any:
+    """Get environment variable with optional default and required check"""
+    value = os.getenv(key, default)
+    if required and value is None:
+        raise ValueError(f"Required environment variable {key} not set")
+    return value
 
-logger = structlog.get_logger("ymera.settings")
+def get_bool_env(key: str, default: bool = False) -> bool:
+    """Get boolean environment variable"""
+    value = os.getenv(key, str(default)).lower()
+    return value in ('true', '1', 'yes', 'on')
 
-# ===============================================================================
-# CONSTANTS & CONFIGURATION
-# ===============================================================================
+def get_int_env(key: str, default: int = 0) -> int:
+    """Get integer environment variable"""
+    try:
+        return int(os.getenv(key, str(default)))
+    except ValueError:
+        return default
 
-# Environment detection
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development").lower()
-PROJECT_ROOT = Path(__file__).parent.parent
+# ============================================================================
+# SETTINGS CLASS
+# ============================================================================
 
-# Default values
-DEFAULT_SECRET_KEY = secrets.token_urlsafe(32)
-DEFAULT_DATABASE_URL = "postgresql://ymera:password@localhost:5432/ymera"
-DEFAULT_REDIS_URL = "redis://localhost:6379/0"
-
-# ===============================================================================
-# CORE SETTINGS CLASS
-# ===============================================================================
-
-class Settings(BaseSettings):
-    """
-    Comprehensive application settings with environment-based configuration.
+@dataclass
+class Settings:
+    """Unified settings class compatible with multiple patterns"""
     
-    This class manages all application settings including database connections,
-    security configurations, API settings, and environment-specific options.
-    """
+    # Application Settings
+    APP_NAME: str = "YMERA Enterprise"
+    APP_VERSION: str = "5.0"
+    ENVIRONMENT: str = field(default_factory=lambda: get_env("ENVIRONMENT", "development"))
+    DEBUG: bool = field(default_factory=lambda: get_bool_env("DEBUG", False))
     
-    # ===== APPLICATION CONFIGURATION =====
-    APP_NAME: str = Field(default="YMERA Enterprise Platform", description="Application name")
-    VERSION: str = Field(default="4.0.0", description="Application version")
-    DESCRIPTION: str = Field(
-        default="Enterprise-grade Multi-Agent Learning Platform",
-        description="Application description"
+    # Database Settings
+    DATABASE_URL: str = field(
+        default_factory=lambda: get_env(
+            "DATABASE_URL", 
+            "sqlite+aiosqlite:///./ymera.db"
+        )
     )
+    DATABASE_ECHO: bool = field(default_factory=lambda: get_bool_env("DATABASE_ECHO", False))
+    DATABASE_POOL_SIZE: int = field(default_factory=lambda: get_int_env("DATABASE_POOL_SIZE", 5))
+    DATABASE_MAX_OVERFLOW: int = field(default_factory=lambda: get_int_env("DATABASE_MAX_OVERFLOW", 10))
     
-    # ===== ENVIRONMENT CONFIGURATION =====
-    ENVIRONMENT: str = Field(default="development", description="Deployment environment")
-    DEBUG: bool = Field(default=False, description="Enable debug mode")
-    TESTING: bool = Field(default=False, description="Enable testing mode")
-    
-    @field_validator("ENVIRONMENT")
-    @classmethod
-    def validate_environment(cls, v):
-        """Validate environment setting"""
-        allowed_environments = ["development", "staging", "production", "testing"]
-        if v.lower() not in allowed_environments:
-            raise ValueError(f"Environment must be one of: {allowed_environments}")
-        return v.lower()
-    
-    # ===== SECURITY CONFIGURATION =====
-    SECRET_KEY: str = Field(default_factory=lambda: DEFAULT_SECRET_KEY, description="Application secret key")
-    JWT_SECRET_KEY: str = Field(default_factory=lambda: DEFAULT_SECRET_KEY, description="JWT secret key")
-    JWT_ALGORITHM: str = Field(default="HS256", description="JWT signing algorithm")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=30, ge=1, le=10080, description="Access token expiration")
-    REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=7, ge=1, le=30, description="Refresh token expiration")
-    
-    @field_validator("SECRET_KEY", "JWT_SECRET_KEY")
-    @classmethod
-    def validate_secret_keys(cls, v):
-        """Validate secret keys have minimum length"""
-        if len(v) < 32:
-            logger.warning("Secret key length is less than recommended 32 characters")
-        return v
-    
-    # ===== DATABASE CONFIGURATION =====
-    DATABASE_URL: str = Field(default=DEFAULT_DATABASE_URL, description="Primary database URL")
-    DATABASE_POOL_SIZE: int = Field(default=20, ge=1, le=100, description="Database connection pool size")
-    DATABASE_MAX_OVERFLOW: int = Field(default=40, ge=0, le=100, description="Database max overflow connections")
-    DATABASE_POOL_TIMEOUT: int = Field(default=30, ge=1, le=300, description="Database pool timeout seconds")
-    DATABASE_POOL_RECYCLE: int = Field(default=3600, ge=300, le=86400, description="Database pool recycle seconds")
-    
-    # ===== REDIS CONFIGURATION =====
-    REDIS_URL: str = Field(default=DEFAULT_REDIS_URL, description="Redis connection URL")
-    REDIS_MAX_CONNECTIONS: int = Field(default=20, ge=1, le=100, description="Redis max connections")
-    REDIS_SOCKET_TIMEOUT: int = Field(default=30, ge=1, le=300, description="Redis socket timeout")
-    REDIS_SOCKET_CONNECT_TIMEOUT: int = Field(default=30, ge=1, le=300, description="Redis connect timeout")
-    
-    # ===== API CONFIGURATION =====
-    API_V1_PREFIX: str = Field(default="/api/v1", description="API version 1 prefix")
-    API_HOST: str = Field(default="0.0.0.0", description="API host address")
-    API_PORT: int = Field(default=8000, ge=1, le=65535, description="API port number")
-    API_WORKERS: int = Field(default=4, ge=1, le=16, description="API worker processes")
-    API_TIMEOUT: int = Field(default=30, ge=1, le=300, description="API request timeout")
-    
-    # ===== CORS CONFIGURATION =====
-    CORS_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8080"],
-        description="Allowed CORS origins"
+    # Redis Settings
+    REDIS_URL: str = field(
+        default_factory=lambda: get_env(
+            "REDIS_URL", 
+            "redis://localhost:6379/0"
+        )
     )
-    CORS_CREDENTIALS: bool = Field(default=True, description="Allow CORS credentials")
-    CORS_METHODS: List[str] = Field(
-        default=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        description="Allowed CORS methods"
+    REDIS_MAX_CONNECTIONS: int = field(default_factory=lambda: get_int_env("REDIS_MAX_CONNECTIONS", 20))
+    REDIS_ENABLED: bool = field(default_factory=lambda: get_bool_env("REDIS_ENABLED", True))
+    
+    # Cache Settings
+    CACHE_TTL: int = field(default_factory=lambda: get_int_env("CACHE_TTL", 300))
+    CACHE_ENABLED: bool = field(default_factory=lambda: get_bool_env("CACHE_ENABLED", True))
+    
+    # Knowledge Graph Settings
+    KG_MAX_NODES: int = field(default_factory=lambda: get_int_env("KG_MAX_NODES", 1000000))
+    KG_MAX_CONNECTIONS_PER_NODE: int = field(
+        default_factory=lambda: get_int_env("KG_MAX_CONNECTIONS_PER_NODE", 1000)
     )
-    CORS_HEADERS: List[str] = Field(
-        default=["*"],
-        description="Allowed CORS headers"
+    KG_SIMILARITY_THRESHOLD: float = 0.8
+    KG_RETENTION_DAYS: int = field(default_factory=lambda: get_int_env("KG_RETENTION_DAYS", 365))
+    KG_EMBEDDING_DIMENSION: int = field(default_factory=lambda: get_int_env("KG_EMBEDDING_DIMENSION", 128))
+    
+    # Vector Database Settings (Pinecone)
+    PINECONE_API_KEY: str = field(default_factory=lambda: get_env("PINECONE_API_KEY", ""))
+    PINECONE_ENVIRONMENT: str = field(default_factory=lambda: get_env("PINECONE_ENVIRONMENT", "us-west1-gcp"))
+    PINECONE_INDEX_NAME: str = field(default_factory=lambda: get_env("PINECONE_INDEX_NAME", "ymera-enterprise"))
+    PINECONE_DIMENSION: int = field(default_factory=lambda: get_int_env("PINECONE_DIMENSION", 1536))
+    
+    # Security Settings
+    SECRET_KEY: str = field(
+        default_factory=lambda: get_env(
+            "SECRET_KEY", 
+            "dev-secret-key-change-in-production"
+        )
     )
+    ENCRYPTION_KEY: str = field(default_factory=lambda: get_env("ENCRYPTION_KEY", ""))
     
-    # ===== LOGGING CONFIGURATION =====
-    LOG_LEVEL: str = Field(default="INFO", description="Logging level")
-    LOG_FORMAT: str = Field(default="json", description="Log format (json/console)")
-    LOG_FILE_PATH: Optional[str] = Field(default=None, description="Log file path")
-    LOG_ROTATION_SIZE: str = Field(default="100MB", description="Log rotation size")
-    LOG_RETENTION_DAYS: int = Field(default=30, ge=1, le=365, description="Log retention days")
+    # API Settings
+    API_HOST: str = field(default_factory=lambda: get_env("API_HOST", "0.0.0.0"))
+    API_PORT: int = field(default_factory=lambda: get_int_env("API_PORT", 8000))
+    API_WORKERS: int = field(default_factory=lambda: get_int_env("API_WORKERS", 4))
+    API_TIMEOUT: int = field(default_factory=lambda: get_int_env("API_TIMEOUT", 60))
     
-    @field_validator("LOG_LEVEL")
-    @classmethod
-    def validate_log_level(cls, v):
-        """Validate logging level"""
-        allowed_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-        if v.upper() not in allowed_levels:
-            raise ValueError(f"Log level must be one of: {allowed_levels}")
-        return v.upper()
+    # Logging Settings
+    LOG_LEVEL: str = field(default_factory=lambda: get_env("LOG_LEVEL", "INFO"))
+    LOG_FORMAT: str = "json"
+    LOG_FILE: Optional[str] = field(default_factory=lambda: get_env("LOG_FILE"))
     
-    # ===== PERFORMANCE CONFIGURATION =====
-    MAX_REQUEST_SIZE: int = Field(default=16777216, ge=1048576, description="Max request size in bytes (16MB)")
-    REQUEST_TIMEOUT: int = Field(default=30, ge=1, le=300, description="Request timeout seconds")
-    RATE_LIMIT_REQUESTS: int = Field(default=1000, ge=1, description="Rate limit requests per minute")
-    RATE_LIMIT_WINDOW: int = Field(default=60, ge=1, le=3600, description="Rate limit window seconds")
+    # Monitoring Settings
+    METRICS_ENABLED: bool = field(default_factory=lambda: get_bool_env("METRICS_ENABLED", True))
+    METRICS_PORT: int = field(default_factory=lambda: get_int_env("METRICS_PORT", 9090))
     
-    # ===== AGENT CONFIGURATION =====
-    MAX_AGENTS: int = Field(default=100, ge=1, le=1000, description="Maximum number of agents")
-    AGENT_HEARTBEAT_INTERVAL: int = Field(default=30, ge=5, le=300, description="Agent heartbeat interval")
-    AGENT_TIMEOUT: int = Field(default=300, ge=30, le=3600, description="Agent timeout seconds")
-    AGENT_MAX_MEMORY: int = Field(default=1073741824, ge=104857600, description="Agent max memory bytes (1GB)")
+    # Agent Settings
+    MAX_AGENTS: int = field(default_factory=lambda: get_int_env("MAX_AGENTS", 100))
+    AGENT_TIMEOUT: int = field(default_factory=lambda: get_int_env("AGENT_TIMEOUT", 300))
     
-    # ===== LEARNING SYSTEM CONFIGURATION =====
-    LEARNING_ENABLED: bool = Field(default=True, description="Enable learning system")
-    LEARNING_CYCLE_INTERVAL: int = Field(default=60, ge=10, le=3600, description="Learning cycle interval")
-    KNOWLEDGE_SYNC_INTERVAL: int = Field(default=300, ge=60, le=3600, description="Knowledge sync interval")
-    PATTERN_ANALYSIS_INTERVAL: int = Field(default=900, ge=300, le=7200, description="Pattern analysis interval")
-    MEMORY_CONSOLIDATION_INTERVAL: int = Field(default=3600, ge=900, le=86400, description="Memory consolidation interval")
+    # File Storage Settings
+    UPLOAD_DIR: str = field(default_factory=lambda: get_env("UPLOAD_DIR", "./uploads"))
+    MAX_UPLOAD_SIZE: int = field(default_factory=lambda: get_int_env("MAX_UPLOAD_SIZE", 104857600))  # 100MB
     
-    # ===== FILE STORAGE CONFIGURATION =====
-    UPLOAD_DIR: str = Field(default="uploads", description="Upload directory path")
-    MAX_FILE_SIZE: int = Field(default=104857600, ge=1048576, description="Max file size bytes (100MB)")
-    ALLOWED_FILE_TYPES: List[str] = Field(
-        default=[".txt", ".json", ".csv", ".pdf", ".docx", ".xlsx"],
-        description="Allowed file extensions"
-    )
+    # Performance Settings
+    ENABLE_PROFILING: bool = field(default_factory=lambda: get_bool_env("ENABLE_PROFILING", False))
+    ENABLE_TRACING: bool = field(default_factory=lambda: get_bool_env("ENABLE_TRACING", False))
     
-    # ===== MONITORING CONFIGURATION =====
-    METRICS_ENABLED: bool = Field(default=True, description="Enable metrics collection")
-    METRICS_PORT: int = Field(default=9090, ge=1, le=65535, description="Metrics server port")
-    HEALTH_CHECK_INTERVAL: int = Field(default=30, ge=5, le=300, description="Health check interval")
-    PERFORMANCE_TRACKING: bool = Field(default=True, description="Enable performance tracking")
+    def __post_init__(self):
+        """Post-initialization validation and setup"""
+        # Ensure upload directory exists
+        Path(self.UPLOAD_DIR).mkdir(parents=True, exist_ok=True)
     
-    # ===== EXTERNAL INTEGRATIONS =====
-    OPENAI_API_KEY: Optional[str] = Field(default=None, description="OpenAI API key")
-    ANTHROPIC_API_KEY: Optional[str] = Field(default=None, description="Anthropic API key")
-    SLACK_WEBHOOK_URL: Optional[str] = Field(default=None, description="Slack webhook URL")
-    EMAIL_SMTP_HOST: Optional[str] = Field(default=None, description="SMTP host for emails")
-    EMAIL_SMTP_PORT: int = Field(default=587, ge=1, le=65535, description="SMTP port")
-    
-    @root_validator(pre=True)
-    def validate_environment_specific_settings(cls, values):
-        """Validate settings based on environment"""
-        environment = values.get("ENVIRONMENT", "development")
-        
-        if environment == "production":
-            # Production-specific validations
-            if values.get("DEBUG", False):
-                logger.warning("Debug mode is enabled in production environment")
-            
-            if values.get("SECRET_KEY") == DEFAULT_SECRET_KEY:
-                raise ValueError("Default secret key cannot be used in production")
-        
-        elif environment == "development":
-            # Development-specific settings
-            values["DEBUG"] = values.get("DEBUG", True)
-            values["LOG_LEVEL"] = values.get("LOG_LEVEL", "DEBUG")
-        
-        elif environment == "testing":
-            # Testing-specific settings
-            values["TESTING"] = True
-            values["DATABASE_URL"] = values.get("TEST_DATABASE_URL", values.get("DATABASE_URL"))
-            values["REDIS_URL"] = values.get("TEST_REDIS_URL", values.get("REDIS_URL"))
-        
-        return values
-    
-    # ===== COMPUTED PROPERTIES =====
-    @property
-    def database_settings(self) -> Dict[str, Any]:
-        """Get database connection settings"""
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert settings to dictionary"""
         return {
-            "url": self.DATABASE_URL,
-            "pool_size": self.DATABASE_POOL_SIZE,
-            "max_overflow": self.DATABASE_MAX_OVERFLOW,
-            "pool_timeout": self.DATABASE_POOL_TIMEOUT,
-            "pool_recycle": self.DATABASE_POOL_RECYCLE
+            key: getattr(self, key)
+            for key in dir(self)
+            if not key.startswith('_') and key.isupper()
         }
     
-    @property
-    def redis_settings(self) -> Dict[str, Any]:
-        """Get Redis connection settings"""
-        return {
-            "url": self.REDIS_URL,
-            "max_connections": self.REDIS_MAX_CONNECTIONS,
-            "socket_timeout": self.REDIS_SOCKET_TIMEOUT,
-            "socket_connect_timeout": self.REDIS_SOCKET_CONNECT_TIMEOUT
-        }
-    
-    @property
-    def security_settings(self) -> Dict[str, Any]:
-        """Get security configuration settings"""
-        return {
-            "secret_key": self.SECRET_KEY,
-            "jwt_secret_key": self.JWT_SECRET_KEY,
-            "jwt_algorithm": self.JWT_ALGORITHM,
-            "access_token_expire_minutes": self.ACCESS_TOKEN_EXPIRE_MINUTES,
-            "refresh_token_expire_days": self.REFRESH_TOKEN_EXPIRE_DAYS
-        }
-    
-    @property
-    def is_production(self) -> bool:
-        """Check if running in production environment"""
-        return self.ENVIRONMENT == "production"
-    
-    @property
-    def is_development(self) -> bool:
-        """Check if running in development environment"""
-        return self.ENVIRONMENT == "development"
-    
-    @property
-    def is_testing(self) -> bool:
-        """Check if running in testing environment"""
-        return self.ENVIRONMENT == "testing" or self.TESTING
-    
-    class Config:
-        """Pydantic configuration"""
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = True
-        validate_assignment = True
-        extra = "forbid"  # Forbid extra fields
+    def get(self, key: str, default: Any = None) -> Any:
+        """Get setting value with optional default"""
+        return getattr(self, key, default)
 
-# ===============================================================================
-# ENVIRONMENT-SPECIFIC CONFIGURATIONS
-# ===============================================================================
+# ============================================================================
+# GLOBAL SETTINGS INSTANCE
+# ============================================================================
 
-class DevelopmentSettings(Settings):
-    """Development environment specific settings"""
-    DEBUG: bool = True
-    LOG_LEVEL: str = "DEBUG"
-    CORS_ORIGINS: List[str] = ["*"]
+_settings_instance: Optional[Settings] = None
 
-class ProductionSettings(Settings):
-    """Production environment specific settings"""
-    DEBUG: bool = False
-    LOG_LEVEL: str = "INFO"
-    TESTING: bool = False
-    
-    class Config(Settings.Config):
-        # In production, require all sensitive settings from environment
-        fields = {
-            "SECRET_KEY": {"env": "SECRET_KEY"},
-            "JWT_SECRET_KEY": {"env": "JWT_SECRET_KEY"},
-            "DATABASE_URL": {"env": "DATABASE_URL"},
-            "REDIS_URL": {"env": "REDIS_URL"}
-        }
-
-class TestingSettings(Settings):
-    """Testing environment specific settings"""
-    TESTING: bool = True
-    DEBUG: bool = False
-    LOG_LEVEL: str = "WARNING"
-    DATABASE_URL: str = "sqlite:///test.db"
-    REDIS_URL: str = "redis://localhost:6379/1"
-
-# ===============================================================================
-# SETTINGS FACTORY
-# ===============================================================================
-
-def get_settings_class():
-    """Get the appropriate settings class based on environment"""
-    environment = os.getenv("ENVIRONMENT", "development").lower()
-    
-    settings_map = {
-        "development": DevelopmentSettings,
-        "staging": ProductionSettings,  # Use production settings for staging
-        "production": ProductionSettings,
-        "testing": TestingSettings
-    }
-    
-    return settings_map.get(environment, DevelopmentSettings)
-
-@lru_cache()
 def get_settings() -> Settings:
-    """
-    Get application settings with caching.
-    
-    This function creates and caches a Settings instance based on the current
-    environment. The cache ensures that settings are loaded only once during
-    application lifetime.
-    
-    Returns:
-        Settings: Configured settings instance for the current environment
-    """
-    settings_class = get_settings_class()
-    settings = settings_class()
-    
-    logger.info(
-        "Settings initialized",
-        environment=settings.ENVIRONMENT,
-        debug=settings.DEBUG,
-        version=settings.VERSION
-    )
-    
-    return settings
+    """Get or create global settings instance (singleton pattern)"""
+    global _settings_instance
+    if _settings_instance is None:
+        _settings_instance = Settings()
+    return _settings_instance
 
-# ===============================================================================
-# CONFIGURATION VALIDATION
-# ===============================================================================
+def reset_settings():
+    """Reset global settings instance (useful for testing)"""
+    global _settings_instance
+    _settings_instance = None
 
-def validate_settings(settings: Settings) -> Dict[str, Any]:
-    """
-    Validate settings configuration and return validation report.
+# ============================================================================
+# LEGACY COMPATIBILITY FUNCTIONS
+# ============================================================================
+
+# For code expecting specific function names
+def get_config_settings() -> Settings:
+    """Legacy function name compatibility"""
+    return get_settings()
+
+def load_settings() -> Settings:
+    """Alternative function name"""
+    return get_settings()
+
+# ============================================================================
+# CONFIGURATION PROFILES
+# ============================================================================
+
+class DevelopmentConfig(Settings):
+    """Development environment configuration"""
+    ENVIRONMENT: str = "development"
+    DEBUG: bool = True
+    DATABASE_ECHO: bool = True
+    LOG_LEVEL: str = "DEBUG"
+
+class ProductionConfig(Settings):
+    """Production environment configuration"""
+    ENVIRONMENT: str = "production"
+    DEBUG: bool = False
+    DATABASE_ECHO: bool = False
+    LOG_LEVEL: str = "INFO"
+    METRICS_ENABLED: bool = True
+
+class TestingConfig(Settings):
+    """Testing environment configuration"""
+    ENVIRONMENT: str = "testing"
+    DEBUG: bool = True
+    DATABASE_URL: str = "sqlite+aiosqlite:///:memory:"
+    REDIS_ENABLED: bool = False
+    CACHE_ENABLED: bool = False
+
+def get_config_by_environment(env: str = None) -> Settings:
+    """Get configuration based on environment"""
+    if env is None:
+        env = os.getenv("ENVIRONMENT", "development")
     
-    Args:
-        settings: Settings instance to validate
-        
-    Returns:
-        Dict containing validation results and recommendations
-    """
-    validation_report = {
-        "valid": True,
-        "warnings": [],
-        "errors": [],
-        "recommendations": []
+    configs = {
+        "development": DevelopmentConfig,
+        "production": ProductionConfig,
+        "testing": TestingConfig
     }
     
-    # Validate security settings
-    if settings.is_production:
-        if settings.SECRET_KEY == DEFAULT_SECRET_KEY:
-            validation_report["errors"].append("Default secret key used in production")
-            validation_report["valid"] = False
+    config_class = configs.get(env.lower(), Settings)
+    return config_class()
+
+# ============================================================================
+# VALIDATORS
+# ============================================================================
+
+def validate_database_url(url: str) -> bool:
+    """Validate database URL format"""
+    valid_prefixes = ['sqlite', 'postgresql', 'mysql', 'oracle']
+    return any(url.startswith(prefix) for prefix in valid_prefixes)
+
+def validate_redis_url(url: str) -> bool:
+    """Validate Redis URL format"""
+    return url.startswith('redis://') or url.startswith('rediss://')
+
+def validate_settings(settings: Settings) -> tuple[bool, list[str]]:
+    """Validate settings configuration"""
+    errors = []
+    
+    # Database validation
+    if not validate_database_url(settings.DATABASE_URL):
+        errors.append(f"Invalid database URL: {settings.DATABASE_URL}")
+    
+    # Redis validation
+    if settings.REDIS_ENABLED and not validate_redis_url(settings.REDIS_URL):
+        errors.append(f"Invalid Redis URL: {settings.REDIS_URL}")
+    
+    # Security validation
+    if settings.ENVIRONMENT == "production":
+        if settings.SECRET_KEY == "dev-secret-key-change-in-production":
+            errors.append("Production environment requires custom SECRET_KEY")
         
         if settings.DEBUG:
-            validation_report["warnings"].append("Debug mode enabled in production")
+            errors.append("DEBUG should be False in production")
     
-    # Validate database settings
-    if not settings.DATABASE_URL.startswith(("postgresql://", "sqlite://", "mysql://")):
-        validation_report["warnings"].append("Unusual database URL format detected")
+    # Pinecone validation
+    if settings.PINECONE_API_KEY and len(settings.PINECONE_API_KEY) < 10:
+        errors.append("Invalid Pinecone API key")
     
-    # Validate performance settings
-    if settings.DATABASE_POOL_SIZE > 100:
-        validation_report["warnings"].append("Database pool size is very large")
+    return len(errors) == 0, errors
+
+# ============================================================================
+# CONTEXT MANAGERS
+# ============================================================================
+
+class TemporarySettings:
+    """Context manager for temporary settings changes (useful for testing)"""
     
-    return validation_report 
+    def __init__(self, **overrides):
+        self.overrides = overrides
+        self.original_values = {}
+        self.settings = get_settings()
+    
+    def __enter__(self):
+        for key, value in self.overrides.items():
+            self.original_values[key] = getattr(self.settings, key, None)
+            setattr(self.settings, key, value)
+        return self.settings
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for key, value in self.original_values.items():
+            setattr(self.settings, key, value)
+
+# ============================================================================
+# CONFIGURATION EXPORT
+# ============================================================================
+
+def export_config_to_env_file(filepath: str = ".env.example") -> None:
+    """Export current configuration as .env file template"""
+    settings = get_settings()
+    
+    env_content = [
+        "# YMERA Enterprise Configuration",
+        "# Generated configuration template",
+        "",
+        "# Application Settings",
+        f"ENVIRONMENT={settings.ENVIRONMENT}",
+        f"DEBUG={settings.DEBUG}",
+        "",
+        "# Database Settings",
+        f"DATABASE_URL={settings.DATABASE_URL}",
+        f"DATABASE_POOL_SIZE={settings.DATABASE_POOL_SIZE}",
+        "",
+        "# Redis Settings",
+        f"REDIS_URL={settings.REDIS_URL}",
+        f"REDIS_ENABLED={settings.REDIS_ENABLED}",
+        "",
+        "# Knowledge Graph Settings",
+        f"KG_MAX_NODES={settings.KG_MAX_NODES}",
+        f"KG_RETENTION_DAYS={settings.KG_RETENTION_DAYS}",
+        "",
+        "# Security Settings",
+        "SECRET_KEY=your-secret-key-here",
+        "ENCRYPTION_KEY=your-encryption-key-here",
+        "",
+        "# API Settings",
+        f"API_HOST={settings.API_HOST}",
+        f"API_PORT={settings.API_PORT}",
+        "",
+        "# Pinecone Settings",
+        "PINECONE_API_KEY=your-pinecone-api-key",
+        f"PINECONE_ENVIRONMENT={settings.PINECONE_ENVIRONMENT}",
+        f"PINECONE_INDEX_NAME={settings.PINECONE_INDEX_NAME}",
+        ""
+    ]
+    
+    with open(filepath, 'w') as f:
+        f.write('\n'.join(env_content))
+    
+    print(f"Configuration template exported to {filepath}")
+
+# ============================================================================
+# USAGE EXAMPLES
+# ============================================================================
+
+def print_configuration_examples():
+    """Print usage examples"""
+    examples = """
+    ═══════════════════════════════════════════════════════════════
+    Configuration Settings Usage Examples
+    ═══════════════════════════════════════════════════════════════
+    
+    1. Basic Usage:
+       from config_settings import get_settings
+       
+       settings = get_settings()
+       print(settings.DATABASE_URL)
+    
+    2. Environment-Specific Config:
+       from config_settings import get_config_by_environment
+       
+       config = get_config_by_environment("production")
+    
+    3. Temporary Override (Testing):
+       from config_settings import TemporarySettings
+       
+       with TemporarySettings(DEBUG=True, REDIS_ENABLED=False):
+           # Code with overridden settings
+           pass
+    
+    4. Validation:
+       from config_settings import validate_settings
+       
+       is_valid, errors = validate_settings(settings)
+       if not is_valid:
+           print("Configuration errors:", errors)
+    
+    5. Export Template:
+       from config_settings import export_config_to_env_file
+       
+       export_config_to_env_file(".env.example")
+    
+    ═══════════════════════════════════════════════════════════════
+    """
+    print(examples)
+
+# ============================================================================
+# MODULE INITIALIZATION
+# ============================================================================
+
+# Initialize settings on import
+settings = get_settings()
+
+# ============================================================================
+# EXPORTS
+# ============================================================================
+
+__all__ = [
+    "Settings",
+    "get_settings",
+    "get_config_settings",
+    "load_settings",
+    "reset_settings",
+    "get_config_by_environment",
+    "DevelopmentConfig",
+    "ProductionConfig",
+    "TestingConfig",
+    "validate_settings",
+    "TemporarySettings",
+    "export_config_to_env_file",
+    "settings"
+]
+
+# ============================================================================
+# TESTING
+# ============================================================================
+
+if __name__ == "__main__":
+    print("Configuration Settings Module Test\n")
+    
+    # Test 1: Get settings
+    print("1. Testing get_settings()...")
+    s = get_settings()
+    print(f"   ✓ Environment: {s.ENVIRONMENT}")
+    print(f"   ✓ Database URL: {s.DATABASE_URL}")
+    print(f"   ✓ Redis URL: {s.REDIS_URL}")
+    
+    # Test 2: Validation
+    print("\n2. Testing validation...")
+    is_valid, errors = validate_settings(s)
+    print(f"   ✓ Valid: {is_valid}")
+    if errors:
+        for error in errors:
+            print(f"   ⚠ {error}")
+    
+    # Test 3: Temporary settings
+    print("\n3. Testing temporary settings...")
+    print(f"   Original DEBUG: {s.DEBUG}")
+    with TemporarySettings(DEBUG=True):
+        print(f"   Temporary DEBUG: {s.DEBUG}")
+    print(f"   Restored DEBUG: {s.DEBUG}")
+    
+    # Test 4: Export template
+    print("\n4. Testing export template...")
+    try:
+        export_config_to_env_file(".env.test")
+        print("   ✓ Template exported successfully")
+    except Exception as e:
+        print(f"   ✗ Export failed: {e}")
+    
+    # Test 5: Configuration dict
+    print("\n5. Testing configuration dict...")
+    config_dict = s.to_dict()
+    print(f"   ✓ Configuration has {len(config_dict)} settings")
+    
+    print("\n✓ All tests completed!")
+    print("\nFor usage examples, run:")
+    print("  from config_settings import print_configuration_examples")
+    print("  print_configuration_examples()")
