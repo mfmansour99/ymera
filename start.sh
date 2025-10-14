@@ -32,12 +32,15 @@ print_warning() {
 # Check Python version
 echo "Checking prerequisites..."
 if command -v python3 &> /dev/null; then
-    PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
-    print_status "Python installed: $PYTHON_VERSION"
+    PYTHON_CMD=python3
+elif command -v python &> /dev/null; then
+    PYTHON_CMD=python
 else
     print_error "Python 3.9+ is required but not installed"
     exit 1
 fi
+PYTHON_VERSION=$($PYTHON_CMD --version | cut -d' ' -f2)
+print_status "Python installed: $PYTHON_VERSION"
 
 # Check Node.js
 if command -v node &> /dev/null; then
