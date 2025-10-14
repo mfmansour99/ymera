@@ -1,33 +1,12 @@
-"""YMERA Enterprise - Pattern Recognition Engine Module v4.0"""
-
-import logging
-logger = logging.getLogger("ymera.pattern_recognition")
+"""YMERA Enterprise - Learning Engine Module v4.0"""
 
 try:
-    from .pattern_recognition import (
-        PatternRecognitionEngine,
-        PatternRecognitionConfig,
-        DiscoveredPattern,
-        PatternInstance,
-        PatternAnalysisRequest,
-        PatternSearchResult,
-        BasePatternAnalyzer,
-        TemporalPatternAnalyzer,
-    )
-    _IMPORT_SUCCESS = True
+    from .external_learning import ProductionExternalLearningProcessor, ExternalLearningConfig
+    from .memory_consolidation import ProductionMemoryConsolidator, MemoryConsolidationConfig
+    __all__ = ["ProductionExternalLearningProcessor", "ExternalLearningConfig", "ProductionMemoryConsolidator", "MemoryConsolidationConfig"]
 except ImportError as e:
-    _IMPORT_SUCCESS = False
-    logger.error(f"Failed to initialize Pattern Recognition module: {e}")
-
-__all__ = [
-    "PatternRecognitionEngine",
-    "PatternRecognitionConfig",
-    "DiscoveredPattern",
-    "PatternInstance",
-    "PatternAnalysisRequest",
-    "PatternSearchResult",
-    "BasePatternAnalyzer",
-    "TemporalPatternAnalyzer",
-]
+    import logging
+    logging.error(f"Failed to import Learning Engine components: {e}")
+    __all__ = []
 
 __version__ = "4.0.0"
